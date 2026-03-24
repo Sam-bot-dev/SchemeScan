@@ -677,7 +677,7 @@ async function sendMessage() {
     const r = await fetch(`${CONFIG.API_BASE}/rag/query`, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:text,language:STATE.lang,state_filter:STATE.profile?.state||null,session_id:STATE.sessionId})
+      body:JSON.stringify({question:text,language:STATE.lang,state_filter:STATE.profile?.state||null,session_id:STATE.sessionId,history:STATE.chatHistory})
     });
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
@@ -691,7 +691,7 @@ async function sendMessage() {
     // Only show scheme cards when the AI is actually recommending schemes
     // (completeness >= 8 means enough profile data, or the answer mentions specific scheme names)
     const isRecommending = (
-      (typeof d.completeness === 'number' && d.completeness >= 8) ||
+      (typeof d.completeness === 'number' && d.completeness >= 2) ||
       /✅.{0,60}(yojana|scheme|pension|mission|pradhan|awas|kisan|bharat|samman)/i.test(d.answer) ||
       /you (?:may|likely|do|now) qualify/i.test(d.answer) ||
       /schemes? (?:for|that match|matching) you/i.test(d.answer)

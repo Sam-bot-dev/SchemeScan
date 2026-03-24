@@ -15,9 +15,14 @@ v7.0 IMPROVEMENTS:
 """
 
 import os, re, io, sqlite3, math, uuid, json, csv
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, List, Dict, Tuple
-from datetime import datetime
+# ── UTILS ───────────────────────────────────────────────────────────────────
+
+def strip_surrogates(text: str) -> str:
+    """Remove unpaired surrogates from string to avoid UTF-8 encoding errors."""
+    return "".join(c for c in text if not (0xD800 <= ord(c) <= 0xDFFF))
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, BackgroundTasks, Request # type: ignore
 from fastapi.middleware.cors import CORSMiddleware # type: ignore
@@ -760,90 +765,35 @@ Do ONLY these THREE things, in order:
 STRICT RULES: Do NOT list any schemes. Max 4 lines. Be warm and encouraging.
 """
 
-    elif completeness < 4:
-        # Warm, conversational phrasing for each question field
+    elif completeness < 2:
+        # Stage 1: got the first fact — confirm and ask ONE more thing
         conv_questions = {
             "state":          "Which state or union territory do you live in?",
             "age":            "How old are you?",
-            "gender":         "Are you male or female? (I ask because many schemes are gender-specific)",
-            "occupation":     "What kind of work do you do? For example \u2014 farmer, student, daily worker, housewife, business owner, or something else?",
-            "caste":          "Do you belong to SC, ST, OBC, or General category? (Many schemes are category-specific, so this really helps!)",
-            "income":         "What is your family's approximate yearly income? For example \u2014 \u20b930,000, \u20b91 lakh, \u20b93 lakh, or no income?",
-            "education":      "What is your highest education? For example \u2014 no schooling, 8th pass, 10th pass, 12th pass, or graduate?",
-            "bpl":            "Do you have a BPL ration card or Antyodaya card? (Yes or No)",
-            "disability":     "Do you have any disability? (Yes or No)",
-            "marital_status": "Are you currently single, married, or widowed?",
-        }
-        conv_q = conv_questions.get(next_field, next_q) if next_field else "Can you tell me more about yourself?"
-        confirmed_line = (f"Got it! So you are {profile_summary}. " if profile_summary else "Got it! ")
-
-        task_instruction = f"""TASK: Still collecting basic info ({completeness} things known so far).
-Do ONLY these two things:
-1. In ONE line, confirm what you heard: \"{confirmed_line}\"
-2. Then ask ONLY this ONE question, nothing more:
-
-   \"{conv_q}\"
-
-STRICT RULES:
-- Do NOT show any schemes yet. You need more information first.
-- Ask ONLY one question. Never two questions at once.
-- Max 4 lines total. Be warm and encouraging.
-"""
-
-    elif completeness < 6:
-        conv_questions = {
-            "caste":          "One more thing \u2014 do you belong to SC, ST, OBC, or General category?",
-            "income":         "What is your approximate yearly family income? (e.g. \u20b950,000, \u20b91 lakh, \u20b93 lakh)",
-            "education":      "What is your highest education level? (e.g. 10th pass, 12th pass, graduate)",
-            "bpl":            "Do you have a BPL ration card? (Yes or No) \u2014 this unlocks extra schemes!",
+            "gender":         "Are you male or female?",
+            "occupation":     "What kind of work do you do? (farmer, student, daily worker, housewife, business owner, etc.)",
+            "caste":          "Do you belong to SC, ST, OBC, or General category?",
+            "income":         "What is your family's approximate yearly income? (e.g. ₹50,000, ₹1 lakh, ₹3 lakh, or no income)",
+            "bpl":            "Do you have a BPL ration card? (Yes or No)",
             "disability":     "Do you have any disability? (Yes or No)",
             "marital_status": "Are you single, married, or widowed?",
-            "occupation":     "What kind of work do you do?",
-            "gender":         "Are you male or female?",
         }
-        conv_q = conv_questions.get(next_field, next_q) if next_field else "Any other detail you can share?"
+        conv_q = conv_questions.get(next_field, next_q) if next_field else "Can you tell me your state and age?"
+        confirmed_line = (f"Got it! So you are {profile_summary}. " if profile_summary else "Got it! ")
 
-        task_instruction = f"""TASK: You have {completeness} details ({profile_summary}). Getting closer \u2014 a few more questions!
-Do exactly this:
-1. Warmly confirm in ONE line: \"Great! So you are {profile_summary}.\"
-2. Say you're almost ready to find their schemes (ONE short sentence).
-3. Ask ONLY this ONE question:
+        task_instruction = f"""TASK: Just got started ({completeness} thing known so far).
+Do ONLY these two things:
+1. In ONE line, confirm what you heard: \"{confirmed_line}\"
+2. Then ask ONLY this ONE quick question:
 
    \"{conv_q}\"
 
 STRICT RULES:
-- Do NOT show full scheme recommendations yet.
-- One question only. Max 5 lines. Stay warm.
+- Ask ONLY one question. Never two at once.
+- Max 3 lines total. Be warm and encouraging.
 """
 
-    elif completeness < 8:
-        # Stage 6-7: tease scheme names, ask last question
-        conv_questions = {
-            "bpl":            "Do you have a BPL ration card? (Yes or No) \u2014 this could unlock several extra schemes!",
-            "disability":     "Do you have any disability? (Yes or No) \u2014 there are dedicated schemes I can find for you!",
-            "marital_status": "Are you single, married, or a widow/widower?",
-            "education":      "What is your highest education level?",
-            "income":         "What is your approximate yearly family income?",
-        }
-        conv_q = conv_questions.get(next_field, next_q) if next_field else None
-        schemes_available = schemes_text and schemes_text.strip() not in ("", "NO SCHEME DATA AVAILABLE.")
-        tease = "Mention 1-2 SCHEME NAMES that might apply (names only, no details). Example: \"I can already see PM Kisan and Bihar Startup Policy might apply for you!\"" if schemes_available else ""
-        q_line = f'4. Ask ONLY this ONE final question: \"{conv_q}\"' if conv_q else "4. You have enough info \u2014 give full recommendations now."
-
-        task_instruction = f"""TASK: {completeness}/9 fields known ({profile_summary}). Almost done!
-Do in order:
-1. Warmly confirm: \"Almost there! You are {profile_summary}.\"
-2. Say you can already see some matching schemes.
-3. {tease}
-{q_line}
-
-STRICT RULES:
-- Do NOT give full scheme details yet.
-- Ask at most ONE question.
-- Max 6 lines.
-"""
-
-    else:
+    else:  # completeness >= 2 → show recommendations NOW
         schemes_available = schemes_text and schemes_text.strip() not in ("", "NO SCHEME DATA AVAILABLE.")
         fallback_block = f"\n\n{no_schemes_msg}" if not schemes_available else ""
 
@@ -1158,6 +1108,9 @@ async def rag_query(req: RAGQuery):
         answer = resp.json().get("message", {}).get("content", "").strip()
         if not answer:
             answer = "⚠️ No response from AI. Please try again."
+        
+        # Strip surrogates to prevent encoding errors
+        answer = strip_surrogates(answer)
 
         # ── Post-processing: strip hallucinated "user reply" continuations ──────
         # Small models like phi3:mini sometimes answer their own question.
@@ -1476,8 +1429,37 @@ async def tts(req: TTSReq):
     return {"success":False,"use_browser_tts":True,"fallback_text":req.text,"language":req.language}
 
 @app.post("/voice/stt")
-async def stt(data: dict):
-    return {"transcript":"","success":False,"use_browser_stt":True}
+async def stt(request: Request):
+    try:
+        data = await request.json()
+        audio_b64 = data.get("audio")
+        lang = data.get("language", "en-IN")
+        
+        if not audio_b64:
+            return {"transcript": "", "success": False, "reason": "No audio data"}
+            
+        import speech_recognition as sr
+        import base64
+        
+        # Clean base64 if it has prefix
+        if "," in audio_b64:
+            audio_b64 = audio_b64.split(",")[1]
+            
+        audio_data = base64.b64decode(audio_b64)
+        
+        # We assume the frontend sends a format that sr.AudioFile can handle (wav/aiff/flac)
+        # Browsers usually send webm/ogg. We might need pydub here.
+        # For now, let's try the direct approach if it's a valid format.
+        
+        r = sr.Recognizer()
+        with sr.AudioFile(io.BytesIO(audio_data)) as source:
+            audio = r.record(source)
+            
+        text = r.recognize_google(audio, language=lang)
+        return {"transcript": text, "success": True}
+        
+    except Exception as e:
+        return {"transcript": "", "success": False, "reason": str(e), "use_browser_stt": True}
 
 @app.get("/voice/languages")
 def languages():
@@ -1788,7 +1770,7 @@ HOW TO BEHAVE:
     try:
         resp = httpx.post(
             OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": full_prompt, "stream": False},
+            json={"model": MODEL_NAME, "prompt": full_prompt, "stream": False},
             timeout=90.0
         )
         raw = resp.json().get("response", "").strip()
@@ -1886,7 +1868,7 @@ ANSWER:"""
     try:
         resp = httpx.post(
             OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+            json={"model": MODEL_NAME, "prompt": prompt, "stream": False},
             timeout=90.0
         )
         answer = resp.json().get("response", "Could not generate response.").strip()
