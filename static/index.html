@@ -397,7 +397,7 @@ header{position:relative;z-index:50;padding:0 24px;height:64px;display:flex;alig
             placeholder="Describe yourself — age, state, occupation, income…"
             onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
           <div class="input-actions">
-            <button class="act-btn ocr-btn" title="Upload Aadhaar/PAN/Income cert" onclick="openOCR()">📷</button>
+            <button class="act-btn ocr-btn" title="Upload Aadhaar/PAN/Income cert" onclick="window.location.href='/static/ocr_scanner.html'">📷</button>
             <button class="voice-btn" id="voiceBtn" title="Voice input" onclick="toggleVoice()">
               🎤
               <div class="voice-rings"><div class="voice-ring"></div><div class="voice-ring"></div><div class="voice-ring"></div></div>
