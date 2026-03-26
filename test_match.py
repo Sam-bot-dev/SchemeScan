@@ -1,61 +1,91 @@
+import os
+import json
 import firebase_admin
 from firebase_admin import credentials, firestore
-from blueprints.schemes import db
-from utils.firebase_client import query_collection
 
+# ================= FIREBASE INIT =================
+if not firebase_admin._apps:
+    firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
+    if not firebase_json:
+        raise ValueError("FIREBASE_CREDENTIALS not set")
+
+    cred_dict = json.loads(firebase_json)
+    cred = credentials.Certificate(cred_dict)
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+
+# ================= HELPERS =================
 def safe_int(val, default=0):
-    try: return int(float(val)) if val else default
-    except: return default
+    try:
+        return int(float(val)) if val else default
+    except:
+        return default
 
-def test_matching():
-    # User Profile
-    user_age = 19
-    user_income = 200000
-    user_gender = "male"
-    user_state = "gujarat"
-    user_category = "general"
+# ================= MATCH FUNCTION =================
+def match_schemes(user_profile):
+    user_age = user_profile.get("age", 0)
+    user_income = user_profile.get("income", 0)
+    user_gender = user_profile.get("gender", "").lower()
+    user_state = user_profile.get("state", "").lower()
+    user_category = user_profile.get("category", "").lower()
 
-    print(f"Testing for: Age={user_age}, Income={user_income}, Gender={user_gender}, State={user_state}")
-
-    schemes_ref = db.collection('schemes').stream()
     matches = []
+
+    # ⚠️ Consider limiting in future
+    schemes_ref = db.collection('schemes').stream()
 
     for doc in schemes_ref:
         s = doc.to_dict()
-        print(f"\nEvaluating: {s.get('name')}")
-        
         missed_criteria = []
-        
-        # Check State
-        scheme_state = s.get('state', '').lower()
+
+        # 🔹 State check
+        scheme_state = (s.get('state') or '').lower()
         if s.get('level') == 'state' and scheme_state and user_state and scheme_state != user_state:
-            missed_criteria.append(f"State mismatch: Scheme is for {scheme_state.title()}, you are from {user_state.title()}.")
-            
-        # Check Age
+            missed_criteria.append("state")
+
+        # 🔹 Age check
         min_age = safe_int(s.get('age_min'), 0)
         max_age = safe_int(s.get('age_max'), 150)
+
         if user_age < min_age:
-            missed_criteria.append(f"Age too low: You are {user_age}, scheme requires minimum {min_age} years.")
+            missed_criteria.append("age_low")
         elif user_age > max_age:
-            missed_criteria.append(f"Age too high: You are {user_age}, scheme requires maximum {max_age} years.")
-            
-        # Check Income
+            missed_criteria.append("age_high")
+
+        # 🔹 Income check
         income_limit = safe_int(s.get('income_limit_annual'), 999999999)
         if user_income > income_limit:
-            missed_criteria.append(f"Income too high: Your income (₹{user_income}) exceeds limit (₹{income_limit}).")
-            
-        # Check Gender
-        s_gender = s.get('gender', 'All').lower()
-        if s_gender != 'all' and user_gender != 'all' and s_gender != user_gender and user_gender != '':
-            missed_criteria.append(f"Gender mismatch: Scheme is for {s_gender.title()} only.")
+            missed_criteria.append("income")
 
-        print(f"Missed: {missed_criteria}")
+        # 🔹 Gender check
+        s_gender = (s.get('gender') or 'all').lower()
+        if s_gender != 'all' and user_gender and s_gender != user_gender:
+            missed_criteria.append("gender")
 
+        # 🔥 Matching logic
         if len(missed_criteria) <= 1:
-            matches.append(s.get('name'))
+            matches.append({
+                "scheme_name": s.get('name'),
+                "missed": missed_criteria
+            })
 
-    print(f"\nTotal matches found (Exact or Partial): {len(matches)}")
-    print(matches)
+    return matches
 
+
+# ================= TEST =================
 if __name__ == "__main__":
-    test_matching()
+    user_profile = {
+        "age": 19,
+        "income": 200000,
+        "gender": "male",
+        "state": "gujarat",
+        "category": "general"
+    }
+
+    results = match_schemes(user_profile)
+
+    print(f"\n✅ Matches Found: {len(results)}\n")
+
+    for r in results[:10]:
+        print(r)

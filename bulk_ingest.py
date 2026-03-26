@@ -1,27 +1,35 @@
 import os
 import json
-import csv
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# 🔹 Initialize Firebase only once
-if not firebase_admin._apps:
-    # Load credentials from environment variable
-    firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
+# ================= FIREBASE INIT =================
+def init_firestore():
+    if not firebase_admin._apps:
+        firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
 
-    if not firebase_json:
-        raise ValueError("FIREBASE_CREDENTIALS not set in environment variables")
+        if not firebase_json:
+            raise ValueError("❌ FIREBASE_CREDENTIALS not set")
 
-    cred_dict = json.loads(firebase_json)
-    cred = credentials.Certificate(cred_dict)
+        try:
+            cred_dict = json.loads(firebase_json)
+        except json.JSONDecodeError:
+            raise ValueError("❌ Invalid FIREBASE_CREDENTIALS JSON")
 
-    firebase_admin.initialize_app(cred)
+        cred = credentials.Certificate(cred_dict)
 
-# 🔹 Firestore client
-db = firestore.client()
+        firebase_admin.initialize_app(cred, {
+            "projectId": cred_dict.get("project_id")
+        })
+
+    return firestore.client()
 
 
-# ✅ Example function (test Firestore)
+# 🔹 Initialize DB
+db = init_firestore()
+
+
+# ================= TEST FUNCTION =================
 def add_sample_data():
     doc_ref = db.collection("test_collection").document("test_doc")
     doc_ref.set({
@@ -32,5 +40,6 @@ def add_sample_data():
     print("✅ Data added successfully!")
 
 
+# ================= RUN =================
 if __name__ == "__main__":
     add_sample_data()
